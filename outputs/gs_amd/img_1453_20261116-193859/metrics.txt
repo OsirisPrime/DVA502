@@ -1,0 +1,4 @@
+test views: 34
+PSNR: 17.31 dB
+SSIM: 0.6880
+gaussians: 53343

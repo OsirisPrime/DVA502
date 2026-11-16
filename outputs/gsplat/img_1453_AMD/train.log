@@ -1,0 +1,70 @@
+start 21:58:57
+265 posed images, 68300 sparse points
+MIOpen(HIP): Warning [ParseAndLoadDb] File is unreadable: "/home/kimsv/miniforge3/envs/lerobot/lib/python3.12/site-packages/_rocm_sdk_libraries_gfx120X_all/share/miopen/db/gfx1201_32.HIP.fdb.txt"
+step      0  loss 0.1468  #gaussians 68,300
+step    500  loss 0.0763  #gaussians 68,300
+step   1000  loss 0.0471  #gaussians 121,001
+step   1500  loss 0.0501  #gaussians 230,487
+step   2000  loss 0.0649  #gaussians 348,702
+step   2500  loss 0.0378  #gaussians 456,137
+step   3000  loss 0.0368  #gaussians 551,079
+step   3500  loss 0.0375  #gaussians 640,734
+step   4000  loss 0.0326  #gaussians 718,869
+step   4500  loss 0.0352  #gaussians 786,062
+step   5000  loss 0.0996  #gaussians 847,491
+step   5500  loss 0.0301  #gaussians 902,088
+step   6000  loss 0.0431  #gaussians 952,201
+step   6500  loss 0.0528  #gaussians 995,930
+step   7000  loss 0.0293  #gaussians 1,037,896
+step   7500  loss 0.0720  #gaussians 1,077,281
+step   8000  loss 0.0293  #gaussians 1,111,913
+step   8500  loss 0.0221  #gaussians 1,143,433
+step   9000  loss 0.0229  #gaussians 1,171,336
+step   9500  loss 0.0307  #gaussians 1,199,724
+step  10000  loss 0.0274  #gaussians 1,225,644
+step  10500  loss 0.0287  #gaussians 1,250,704
+step  11000  loss 0.0454  #gaussians 1,274,390
+step  11500  loss 0.0424  #gaussians 1,297,549
+step  12000  loss 0.0259  #gaussians 1,316,542
+step  12500  loss 0.0200  #gaussians 1,336,154
+step  13000  loss 0.0235  #gaussians 1,357,678
+step  13500  loss 0.0316  #gaussians 1,373,829
+step  14000  loss 0.0311  #gaussians 1,389,908
+step  14500  loss 0.0400  #gaussians 1,406,780
+step  15000  loss 0.0233  #gaussians 1,418,568
+step  15500  loss 0.0220  #gaussians 1,418,568
+step  16000  loss 0.0597  #gaussians 1,418,568
+step  16500  loss 0.0271  #gaussians 1,418,568
+step  17000  loss 0.0178  #gaussians 1,418,568
+step  17500  loss 0.0230  #gaussians 1,418,568
+step  18000  loss 0.0208  #gaussians 1,418,568
+step  18500  loss 0.0233  #gaussians 1,418,568
+step  19000  loss 0.0162  #gaussians 1,418,568
+step  19500  loss 0.0141  #gaussians 1,418,568
+step  20000  loss 0.0250  #gaussians 1,418,568
+step  20500  loss 0.0201  #gaussians 1,418,568
+step  21000  loss 0.0429  #gaussians 1,418,568
+step  21500  loss 0.0468  #gaussians 1,418,568
+step  22000  loss 0.0150  #gaussians 1,418,568
+step  22500  loss 0.0362  #gaussians 1,418,568
+step  23000  loss 0.0200  #gaussians 1,418,568
+step  23500  loss 0.0213  #gaussians 1,418,568
+step  24000  loss 0.0580  #gaussians 1,418,568
+step  24500  loss 0.0144  #gaussians 1,418,568
+step  25000  loss 0.0227  #gaussians 1,418,568
+step  25500  loss 0.0179  #gaussians 1,418,568
+step  26000  loss 0.0191  #gaussians 1,418,568
+step  26500  loss 0.0503  #gaussians 1,418,568
+step  27000  loss 0.0556  #gaussians 1,418,568
+step  27500  loss 0.0301  #gaussians 1,418,568
+step  28000  loss 0.0376  #gaussians 1,418,568
+step  28500  loss 0.0170  #gaussians 1,418,568
+step  29000  loss 0.0348  #gaussians 1,418,568
+step  29500  loss 0.0219  #gaussians 1,418,568
+test views: 34
+PSNR: 28.80 dB
+SSIM: 0.9348
+gaussians: 1418568
+
+Saved local_data/scenes/img_1453/output/point_cloud.ply
+end 22:31:36 exit=0

@@ -1,3 +1,6 @@
 local_data/*
-outputs/*
+# outputs/*
+scripts/*
 __pycache__/
+# trained Gaussian scenes are hundreds of MB (GitHub limit 100 MB): keep them local / on Drive
+outputs/**/*.ply

@@ -1,0 +1,13 @@
+{
+  "data": "local_data/scenes/img_1453",
+  "out": null,
+  "steps": 5000,
+  "downscale": 2,
+  "patch": 32,
+  "sh_degree": 3,
+  "test_every": 8,
+  "densify_until": 4000,
+  "grad_thr": 0.0002,
+  "max_gaussians": 300000,
+  "device": "auto"
+}
