@@ -1,0 +1,3 @@
+# Project dependencies (LeRobot + PyTorch are installed separately, see README)
+# Example:matplotlib>=3.8, pandas>=2.0
+
