@@ -1,0 +1,13 @@
+{
+  "data": "local_data/scenes/img_1453",
+  "out": null,
+  "steps": 30000,
+  "downscale": 1,
+  "sh_degree": 3,
+  "test_every": 8,
+  "max_triangles": 4000000,
+  "outdoor": false,
+  "no_dome": false,
+  "data_device": "cpu",
+  "seed": 0
+}

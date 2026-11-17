@@ -1,8 +1,7 @@
 local_data/*
-outputs/*
 scripts/*
 __pycache__/
-# trained Gaussian scenes are hundreds of MB (GitHub limit 100 MB): keep them local / on Drive
+# trained Gaussianor Triangle scenes are hundreds of MB (GitHub limit 100 MB)
 outputs/**/*.ply
 
 # trained triangle models are also hundreds of MB

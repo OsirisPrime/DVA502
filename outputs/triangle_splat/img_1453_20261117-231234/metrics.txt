@@ -1,0 +1,4 @@
+test views: 34
+PSNR: 28.45 dB
+SSIM: 0.9254
+triangles: 3252886
