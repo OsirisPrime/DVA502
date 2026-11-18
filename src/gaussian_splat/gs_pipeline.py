@@ -91,7 +91,7 @@ def cmd_frames(a):
         if score > best_score:
             best, best_score = frame, score
         i += 1
-        if i % window == 0:
+        if i % window == 0 and best is not None:
             cv2.imwrite(str(out / f"{n:05d}.jpg"), best, [cv2.IMWRITE_JPEG_QUALITY, 95])
             n += 1
             best, best_score = None, -1.0
@@ -352,7 +352,7 @@ def cmd_train(a):
     """
     import cv2
     import torch
-    from scipy.spatial import cKDTree
+    from scipy.spatial import KDTree
     from gsplat import rasterization
     from gsplat.strategy import DefaultStrategy
     from tqdm import tqdm
@@ -372,7 +372,10 @@ def cmd_train(a):
     print(f"{len(images)} posed images, {len(xyz)} sparse points")
     views = []
     for im in images:
-        img = cv2.imread(str(d / "images" / im["name"]))[:, :, ::-1]
+        bgr = cv2.imread(str(d / "images" / im["name"]))
+        if bgr is None:
+            raise SystemExit(f"Could not read {d / 'images' / im['name']} (listed in the COLMAP model)")
+        img = bgr[:, :, ::-1]
         W0, H0, fx, fy, cx, cy = im["cam"]
         if a.downscale > 1:
             img = cv2.resize(img, (W0 // a.downscale, H0 // a.downscale), interpolation=cv2.INTER_AREA)
@@ -390,7 +393,7 @@ def cmd_train(a):
 
     # ---- init Gaussians from SfM points ----
     N = len(xyz)
-    dist, _ = cKDTree(xyz).query(xyz, k=4)
+    dist, _ = KDTree(xyz).query(xyz, k=4)
     init_scale = np.sqrt((dist[:, 1:] ** 2).mean(1)).clip(1e-7)
     K_sh = (a.sh_degree + 1) ** 2
     sh0 = ((torch.from_numpy(rgb) - 0.5) / C0)[:, None, :]
@@ -405,7 +408,7 @@ def cmd_train(a):
 
     lrs = {"means": 1.6e-4 * scene_scale, "scales": 5e-3, "quats": 1e-3,
            "opacities": 5e-2, "sh0": 2.5e-3, "shN": 2.5e-3 / 20}
-    optimizers = {k: torch.optim.Adam([{"params": params[k], "lr": lr, "name": k}], eps=1e-15)
+    optimizers: dict[str, torch.optim.Optimizer] = {k: torch.optim.Adam([{"params": params[k], "lr": lr, "name": k}], eps=1e-15)
                   for k, lr in lrs.items()}
     means_sched = torch.optim.lr_scheduler.ExponentialLR(optimizers["means"], 0.01 ** (1 / a.steps))
 

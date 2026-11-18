@@ -33,12 +33,12 @@ PARAM_KEYS = ("means", "scales", "quats", "opacities", "sh0", "shN")
 
 # ---------------------------------------------------------------------------- model setup
 def init_params(xyz: np.ndarray, rgb: np.ndarray, sh_degree: int, init_opacity: float) -> torch.nn.ParameterDict:
-    from scipy.spatial import cKDTree
+    from scipy.spatial import KDTree
 
     n = len(xyz)
     if n < 4:
         raise ValueError("Need at least 4 SfM points to initialise")
-    dist, _ = cKDTree(xyz).query(xyz, k=4)
+    dist, _ = KDTree(xyz).query(xyz, k=4)
     scale = np.sqrt((dist[:, 1:] ** 2).mean(1)).clip(1e-7)  # mean distance to the 3 nearest points
     sh0 = (torch.from_numpy(rgb.astype(np.float32) / 255.0) - 0.5) / C0
     return torch.nn.ParameterDict({
@@ -65,7 +65,8 @@ def make_strategy(cfg: TrainConfig):
 def make_optimizers(params, cfg: TrainConfig, scene_scale: float):
     lrs = {"means": cfg.lr_means * scene_scale, "scales": cfg.lr_scales, "quats": cfg.lr_quats,
            "opacities": cfg.lr_opacities, "sh0": cfg.lr_sh0, "shN": cfg.lr_shN}
-    opts = {k: torch.optim.Adam([{"params": params[k], "lr": lr, "name": k}], eps=1e-15) for k, lr in lrs.items()}
+    opts: dict[str, torch.optim.Optimizer] = {
+        k: torch.optim.Adam([{"params": params[k], "lr": lr, "name": k}], eps=1e-15) for k, lr in lrs.items()}
     sched = torch.optim.lr_scheduler.ExponentialLR(opts["means"], 0.01 ** (1 / cfg.steps))
     return opts, sched
 
