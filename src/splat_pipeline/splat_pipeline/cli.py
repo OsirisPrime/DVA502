@@ -81,8 +81,11 @@ def main(argv: list[str] | None = None) -> int:
     a = ap.parse_args(argv)
     logging.basicConfig(level=logging.DEBUG if a.verbose else logging.INFO,
                         format="%(asctime)s %(levelname)s %(message)s", datefmt="%H:%M:%S")
+    from tqdm.contrib.logging import logging_redirect_tqdm
+
     try:
-        return _dispatch(a)
+        with logging_redirect_tqdm():  # log lines are printed above the progress bars instead of through them
+            return _dispatch(a)
     except (FileNotFoundError, FileExistsError, ValueError, KeyError, TypeError, RuntimeError) as e:
         logging.getLogger("splat_pipeline").error("%s", e)
         if a.verbose:

@@ -17,6 +17,7 @@ def extract_frames(video: str | Path, scene: str | Path, cfg: FramesConfig) -> i
     Returns the number of frames written.
     """
     import cv2
+    from tqdm import tqdm
 
     out = Path(scene) / "images"
     out.mkdir(parents=True, exist_ok=True)
@@ -29,11 +30,16 @@ def extract_frames(video: str | Path, scene: str | Path, cfg: FramesConfig) -> i
     window = max(1, round(vfps / cfg.fps))
     params = [cv2.IMWRITE_JPEG_QUALITY, cfg.jpeg_quality]
 
+    total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) or None
+    bar = tqdm(total=total, desc="frames", unit="frame", dynamic_ncols=True)
     best, best_score, i, n = None, -1.0, 0, 0
     while True:
         ok, frame = cap.read()
         if not ok:
             break
+        bar.update(1)
+        if i % 30 == 0:
+            bar.set_postfix(kept=n)
         if cfg.max_side and max(frame.shape[:2]) > cfg.max_side:
             s = cfg.max_side / max(frame.shape[:2])
             frame = cv2.resize(frame, None, fx=s, fy=s, interpolation=cv2.INTER_AREA)
@@ -49,6 +55,8 @@ def extract_frames(video: str | Path, scene: str | Path, cfg: FramesConfig) -> i
         cv2.imwrite(str(out / f"{n:05d}.jpg"), best, params)
         n += 1
     cap.release()
+    bar.set_postfix(kept=n)
+    bar.close()
     if n == 0:
         raise RuntimeError(f"No frames decoded from {video} (unsupported codec?)")
     log.info("Saved %d frames (%.1f fps video, 1 per %d frames) to %s", n, vfps, window, out)

@@ -14,6 +14,7 @@ import dataclasses
 import json
 import logging
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -26,16 +27,55 @@ from .config import SfmConfig
 log = logging.getLogger(__name__)
 
 
-def _run(cmd: list[str], log_file: Path) -> None:
-    log.info(">> %s", " ".join(cmd))
+# Progress lines COLMAP prints (checked with COLMAP 4.2.1)
+_COUNT = re.compile(r"(?:Processed file|Processing image|Undistorting image) \[(\d+)/(\d+)\]")  # extract, match, undistort
+_BLOCK = re.compile(r"Processing block \[(\d+)/(\d+), (\d+)/(\d+)\]")  # exhaustive matching
+_REGISTERED = re.compile(r"num_reg_frames=(\d+)")  # incremental mapper: count *before* adding this image
+_INITIAL_PAIR = re.compile(r"Registering initial image pair")
+_GLOMAP_DONE = re.compile(r"(Rotation averaging|Track establishment|Global positioning|Iterative bundle adjustment|"
+                          r"Iterative retriangulation and refinement) done")  # global mapper: 5 stages
+
+
+def _run(cmd: list[str], log_file: Path, desc: str = "", total: int | None = None, unit: str = "img",
+         show: bool = True) -> None:
+    """Run a COLMAP command. All output goes to ``log_file``; progress lines drive a tqdm bar."""
+    from tqdm import tqdm
+
+    log.debug(">> %s", " ".join(cmd))
+    sub = cmd[1] if len(cmd) > 1 else cmd[0]
+    if sub == "global_mapper":
+        total, unit = 5, "stage"
+    bar = tqdm(total=total, desc=desc or sub, unit=unit, dynamic_ncols=True, leave=True, disable=not show)
     with open(log_file, "a") as fh:
         fh.write(f"\n>> {' '.join(cmd)}\n")
         fh.flush()
-        r = subprocess.run(cmd, stdout=fh, stderr=subprocess.STDOUT)
-    if r.returncode != 0:
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1,
+                                errors="replace")
+        assert proc.stdout is not None
+        for line in proc.stdout:
+            fh.write(line)
+            n = None
+            if m := _COUNT.search(line):
+                n, bar.total = int(m.group(1)), int(m.group(2))
+            elif m := _BLOCK.search(line):
+                i, rows, j, cols = map(int, m.groups())
+                n, bar.total, unit = (i - 1) * cols + j, rows * cols, "block"
+                bar.unit = unit
+            elif m := _REGISTERED.search(line):
+                n = max(int(m.group(1)) + 1, bar.n)
+            elif _INITIAL_PAIR.search(line):
+                n = max(2, bar.n)
+            elif _GLOMAP_DONE.search(line):
+                n = bar.n + 1
+            if n is not None and n != bar.n:
+                bar.update(n - bar.n)
+        ret = proc.wait()
+    if ret == 0 and bar.total and sub != "mapper":
+        bar.update(bar.total - bar.n)  # e.g. exhaustive matching of a single block prints no progress line
+    bar.close()
+    if ret != 0:
         tail = log_file.read_text().splitlines()[-15:]
-        raise RuntimeError(f"{cmd[0]} {cmd[1]} failed (exit {r.returncode}). Last lines of {log_file}:\n"
-                           + "\n".join(tail))
+        raise RuntimeError(f"{cmd[0]} {sub} failed (exit {ret}). Last lines of {log_file}:\n" + "\n".join(tail))
 
 
 def _help(exe: str, sub: str) -> str:
@@ -110,15 +150,17 @@ def run_sfm(scene: str | Path, cfg: SfmConfig) -> dict:
     _run([cfg.colmap, "feature_extractor", "--database_path", str(db), "--image_path", str(images),
           "--ImageReader.single_camera", str(int(cfg.single_camera)), "--ImageReader.camera_model", cfg.camera_model,
           "--SiftExtraction.max_num_features", str(cfg.max_features)]
-         + _gpu_flags(cfg.colmap, "extract", cfg.use_gpu), log_file)
+         + _gpu_flags(cfg.colmap, "extract", cfg.use_gpu), log_file, "sfm 1/3 features", n_input)
     match = [cfg.colmap, f"{cfg.matcher}_matcher", "--database_path", str(db)]
     if cfg.matcher == "vocab_tree":
         if not cfg.vocab_tree_path:
             raise ValueError("matcher=vocab_tree needs sfm.vocab_tree_path (download from colmap.github.io)")
         match += ["--VocabTreeMatching.vocab_tree_path", cfg.vocab_tree_path]
-    _run(match + _gpu_flags(cfg.colmap, "match", cfg.use_gpu), log_file)
+    _run(match + _gpu_flags(cfg.colmap, "match", cfg.use_gpu), log_file, f"sfm 2/3 matching ({cfg.matcher})",
+         n_input)
     t1 = time.time()
-    _run(mapper + ["--database_path", str(db), "--image_path", str(images), "--output_path", str(sparse)], log_file)
+    _run(mapper + ["--database_path", str(db), "--image_path", str(images), "--output_path", str(sparse)], log_file,
+         f"sfm 3/3 mapping ({cfg.mapper})", n_input)
     t2 = time.time()
 
     models = [m for m in sparse.iterdir() if (m / "images.bin").exists()]
@@ -131,7 +173,7 @@ def run_sfm(scene: str | Path, cfg: SfmConfig) -> dict:
         und = scene / f"undistorted_{cfg.mapper}"
         shutil.rmtree(und, ignore_errors=True)
         _run([cfg.colmap, "image_undistorter", "--image_path", str(images), "--input_path", str(best),
-              "--output_path", str(und), "--output_type", "COLMAP"], log_file)
+              "--output_path", str(und), "--output_type", "COLMAP"], log_file, "undistorting", len(read_model(best).images))
         model_dir, image_dir = und / "sparse", und / "images"
 
     m = read_model(model_dir)
@@ -150,7 +192,7 @@ def run_sfm(scene: str | Path, cfg: SfmConfig) -> dict:
     (scene / "scene.json").write_text(json.dumps(stats, indent=2))
     if cfg.camera_model == "PINHOLE":  # research scripts read text models via sparse_model.txt
         _run([cfg.colmap, "model_converter", "--input_path", str(best), "--output_path", str(best),
-              "--output_type", "TXT"], log_file)
+              "--output_type", "TXT"], log_file, show=False)
         (scene / "sparse_model.txt").write_text(str(best.relative_to(scene)))
     log.info("%s: registered %d/%d images, %d points, %d model(s); features+matching %.0f s, mapping %.0f s",
              cfg.mapper, len(m.images), n_input, len(m.xyz), len(models), t1 - t0, t2 - t1)

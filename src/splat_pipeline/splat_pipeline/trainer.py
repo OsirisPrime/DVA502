@@ -143,8 +143,10 @@ def evaluate(params, views, cfg: TrainConfig, out_dir: Path | None = None) -> di
     import cv2
 
     dev = cfg.device
+    from tqdm import tqdm
+
     per_view = {}
-    for v in views:
+    for v in tqdm(views, desc="eval", unit="view", dynamic_ncols=True, leave=out_dir is not None):
         gt = load_image(v).to(dev).float() / 255.0
         pred, _ = render(params, v.K.to(dev), v.viewmat.to(dev), v.width, v.height, cfg.sh_degree, cfg)
         pred = pred.clamp(0, 1)

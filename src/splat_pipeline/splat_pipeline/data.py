@@ -70,8 +70,11 @@ class ViewDataset(Dataset):
         if cache_in_ram:
             from concurrent.futures import ThreadPoolExecutor
 
+            from tqdm import tqdm
+
             with ThreadPoolExecutor(8) as ex:
-                self.cache = list(ex.map(load_image, views))
+                self.cache = list(tqdm(ex.map(load_image, views), total=len(views), desc="loading images",
+                                       unit="img", dynamic_ncols=True))
 
     def __len__(self) -> int:
         return len(self.views)
