@@ -7,3 +7,6 @@ outputs/**/*.ply
 outputs/**/*.pt
 *.egg-info/
 .pytest_cache/
+
+# LeRobot checkpoints (model + optimizer state, hundreds of MB)
+outputs/**/*.safetensors
