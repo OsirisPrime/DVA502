@@ -1,8 +1,9 @@
 local_data/*
-scripts/*
 __pycache__/
-# trained Gaussianor Triangle scenes are hundreds of MB (GitHub limit 100 MB)
+# trained Gaussian or Triangle scenes are hundreds of MB (GitHub limit 100 MB)
 outputs/**/*.ply
 
 # trained triangle models are also hundreds of MB
 outputs/**/*.pt
+*.egg-info/
+.pytest_cache/

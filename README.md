@@ -33,3 +33,10 @@ hf auth login   # accept the PaliGemma license on huggingface.co first
 ```
 
 Check: `python -c "import torch, lerobot; print(torch.cuda.is_available())"`
+
+## Code and guides
+
+- [src/](src/README.md): Gaussian splatting (research and production versions) and triangle splatting.
+- Guides: [Gaussian splatting](docs/gaussian_splatting.md), [production pipeline](docs/splat_pipeline.md),
+  [triangle splatting](docs/triangle_splatting.md).
+- `scripts/`: exact commands of the experiments. `local_data/` (videos, scenes) is git-ignored. Results go to `outputs/`.

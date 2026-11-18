@@ -1,0 +1,12 @@
+# Many images (1000+) or limited GPU memory: global SfM, images streamed from disk, fixed Gaussian budget.
+sfm:
+  mapper: glomap
+  matcher: vocab_tree     # set vocab_tree_path, or use sequential for video
+train:
+  strategy: mcmc
+  cap_max: 3000000
+  packed: true
+  cache: disk
+  num_workers: 8
+  eval_every: 5000
+  checkpoint_every: 2000

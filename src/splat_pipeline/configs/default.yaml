@@ -1,0 +1,15 @@
+# Same as the built-in defaults (config.py); copy and edit for an experiment, pass with --config.
+frames:
+  fps: 2.0
+  max_side: 1920
+sfm:
+  mapper: colmap          # colmap (incremental) | glomap (global, faster on many images)
+  matcher: sequential     # sequential (video) | exhaustive (<~500 photos) | vocab_tree (large photo sets)
+  camera_model: PINHOLE   # PINHOLE | OPENCV (estimates lens distortion, then undistorts the images)
+  colmap: colmap
+train:
+  steps: 30000
+  downscale: 1
+  test_every: 8
+  strategy: default       # default (grow/prune) | mcmc (fixed budget of cap_max Gaussians)
+  checkpoint_every: 5000

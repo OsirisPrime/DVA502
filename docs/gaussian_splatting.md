@@ -5,30 +5,38 @@ How to go from a video of a real scene to a trained 3D Gaussian splatting (3DGS)
 built for our GPU; see [How the AMD build works](#how-the-amd-build-works).
 
 ```
-video ──frames──▶ images/ ──sfm (COLMAP)──▶ camera poses + sparse points ──train (gsplat)──▶ point_cloud.ply
+video ──frames──▶ images/ ──sfm (COLMAP or GLOMAP)──▶ camera poses + sparse points ──train (gsplat)──▶ point_cloud.ply
 ```
 
 Reference result: `img_1453` (stool + controller, 132 s iPhone video, 265 frames) trained at full
 1080×1920 for 30k steps in 33 min: **PSNR 28.8 dB, SSIM 0.935** on 34 held-out frames, 1.42M Gaussians.
 
-> **Note:** the pipeline scripts (`gs_pipeline.py`, `gs_pipeline_amd.py`, `gsplat.ipynb`) currently live in
-> `local_data/`, which is git-ignored. Copy them over if you start from a fresh clone.
+The code is in `src/gaussian_splat/`: `gs_pipeline.py` (frames, sfm, train), `gsplat.ipynb` (Colab) and `rocm/`
+(the AMD build). This guide uses that research version. For large datasets, checkpoint/resume and team use there is
+a packaged version with the same stages in `src/splat_pipeline/` (see [splat_pipeline.md](splat_pipeline.md)).
 
 ## 1. One-time setup
 
 1. **LeRobot conda env** with the ROCm PyTorch and `~/rocm-torch.txt`, as in the [README](../README.md#setup).
-2. **COLMAP** (computes camera poses; runs on the CPU):
+2. **COLMAP 4.2.1** (computes camera poses on the CPU; includes GLOMAP), installed into the `lerobot` env. The pins keep
+   LeRobot working: COLMAP 4.2.1 needs ffmpeg ≥ 8.1, torchcodec supports ffmpeg 4–9, and numpy must stay at the
+   pip version. (`sudo apt install colmap` gives 3.9, which works with `--mapper colmap` only.)
    ```bash
-   sudo apt install colmap
+   conda install -n lerobot -c conda-forge "colmap=4.2.1=cpu*" "ffmpeg=8.1" "numpy=2.2.6" "libopenimageio=3.1"
    ```
+   The scripts use this COLMAP automatically, also from the gsplat venv. `--colmap PATH` or `$COLMAP_BIN`
+   overrides it.
 3. **gsplat for the AMD GPU** (about 10 min; installs into its own venv in `~/gsplat-rocm`, the `lerobot` env is not touched):
    ```bash
-   bash scripts/build_gsplat_rocm.sh
+   bash src/gaussian_splat/rocm/build_gsplat_rocm.sh
    ```
    It ends with a gradient check that must print `GRADIENTS OK`. Undo everything with `rm -rf ~/gsplat-rocm`.
 
-Activate the environment before every step below. The venv sees all `lerobot` packages and adds gsplat:
+Activate the environment before every step below. The venv sees all `lerobot` packages and adds gsplat. Activating
+`lerobot` first puts COLMAP 4.2.1 on the PATH for the manual `colmap` commands below; `/usr/bin/colmap`, if
+installed, is the older 3.9.
 ```bash
+conda activate lerobot
 source ~/gsplat-rocm/venv/bin/activate
 cd ~/projects/DVA502
 ```
@@ -54,24 +62,47 @@ Put the video in `local_data/videos/` (git-ignored).
 Keeps the sharpest frame in every 1/`fps`-second window and resizes so the longest side is 1920 px.
 
 ```bash
-python local_data/gs_pipeline.py frames --video local_data/videos/IMG_1453.MOV --out local_data/scenes/img_1453 --fps 2
+python src/gaussian_splat/gs_pipeline.py frames --video local_data/videos/IMG_1453.MOV --out local_data/scenes/img_1453 --fps 2
 ```
 
 Aim for **150–300 frames** (`--fps 2` for a ~2 min video). More frames make COLMAP much slower without improving the result.
 
-## 4. Camera poses (COLMAP)
+## 4. Camera poses (COLMAP or GLOMAP)
 
 ```bash
-python local_data/gs_pipeline.py sfm --data local_data/scenes/img_1453
+python src/gaussian_splat/gs_pipeline.py sfm --data local_data/scenes/img_1453
 ```
 
 - Takes tens of minutes on the CPU for ~250 frames.
 - Uses exhaustive matching (every frame against every other), which is robust. Add `--sequential` only for very
   long videos (>400 frames). It is faster but split our first video into disconnected pieces.
 
+**Mapper choice** (`--mapper`). Feature extraction and matching are always done by COLMAP; only the step that
+computes the poses from the matches differs:
+
+| | `--mapper colmap` (default) | `--mapper glomap` |
+|---|---|---|
+| Method | incremental: adds one image at a time | global: solves all cameras at once |
+| Speed | slow on many images (grows quickly with the number of frames) | 10–100× faster mapping |
+| Robustness | most robust, the reference | slightly less robust on difficult scenes |
+| Output folder | `sparse/` | `sparse_glomap/` (so both can be kept) |
+
+```bash
+python src/gaussian_splat/gs_pipeline.py sfm --data local_data/scenes/img_1453 --sequential --mapper glomap
+```
+
+On `img_1453` with sequential matching, GLOMAP registered all 265 frames (about 63,800 points) and its mapping
+step took about 1.5 min. Feature extraction and matching took 3–5 min. Sequential matching worked here together
+with GLOMAP; if frames are missing, drop `--sequential` (exhaustive matching).
+
+Both `train` scripts (Gaussian and triangle) read the model from `sparse_model.txt`, so they use whichever mapper
+ran last. Run `sfm` again with the other `--mapper` to switch. All steps use the same COLMAP
+binary, because the database format changed in COLMAP 3.12.
+
 **Check the result before training:**
 ```bash
-colmap model_analyzer --path $(cat local_data/scenes/img_1453/sparse_model.txt)
+S=local_data/scenes/img_1453
+colmap model_analyzer --path $S/$(cat $S/sparse_model.txt)
 ```
 
 | | good (img_1453) | bad (first try) |
@@ -87,7 +118,7 @@ colmap model_analyzer --path $(cat local_data/scenes/img_1453/sparse_model.txt)
 ## 5. Train
 
 ```bash
-python local_data/gs_pipeline.py train --data local_data/scenes/img_1453 --steps 30000 --downscale 1
+python src/gaussian_splat/gs_pipeline.py train --data local_data/scenes/img_1453 --steps 30000 --downscale 1
 ```
 
 | Option | Default | Meaning |
@@ -117,11 +148,13 @@ viewpoints near where the camera went.
 
 ## Alternatives
 
-- **Google Colab (NVIDIA GPU, free tier):** `local_data/gsplat.ipynb`. Upload the scene folder (`images/`,
-  `sparse/0/*.txt`) and `gs_pipeline.py` to Google Drive, open the notebook in VS Code with the *Colab* extension,
+- **Google Colab (NVIDIA GPU, free tier):** `src/gaussian_splat/gsplat.ipynb`. Upload the frames (`images/`), the
+  three `.txt` files of the model named in `sparse_model.txt` (e.g. `sparse/0/` or `sparse_glomap/0/`) and
+  `gs_pipeline.py` to Google Drive, open the notebook in VS Code with the *Colab* extension,
   select a GPU runtime and run the cells.
-- **Pure-PyTorch trainer** (`local_data/gs_pipeline_amd.py`): needs no gsplat build, but is ~1000× slower and
-  gave 17 dB on the same scene. Only useful for debugging.
+- **Production version** (`src/splat_pipeline/`): same stages as a Python package, with YAML configs,
+  checkpoint/resume, images streamed from disk for large datasets, the MCMC densification strategy and tests.
+  See [splat_pipeline.md](splat_pipeline.md).
 
 ## Troubleshooting
 
@@ -129,14 +162,15 @@ viewpoints near where the camera went.
 |---|---|
 | COLMAP registers few frames / several models | Re-film with more texture, light and overlap. Use exhaustive matching (no `--sequential`). |
 | `CUDA out of memory` while training | `--downscale 2`. |
+| `GLOMAP not found` | Install COLMAP 4 into the lerobot env (step 1), or pass `--colmap PATH`. |
 | Build script fails | Full log in `~/gsplat-rocm/build.log`. Check that torch is still `2.11.0+rocm7.13.0`: the SDK version in the script must match it. |
 | `GRADIENTS WRONG` from the check | Do not train with that build. See the next section. |
 | Washed-out colours | Video was HDR. Film with *HDR Video* off. |
 
 ## How the AMD build works
 
-`scripts/build_gsplat_rocm.sh` builds [AMD's ROCm port of gsplat](https://github.com/ROCm/gsplat) at a pinned
-commit and applies `scripts/gsplat_rocm_gfx1201.patch`. AMD's port targets Instinct datacenter GPUs, which run
+`src/gaussian_splat/rocm/build_gsplat_rocm.sh` builds [AMD's ROCm port of gsplat](https://github.com/ROCm/gsplat) at a pinned
+commit and applies `gsplat_rocm_gfx1201.patch` (same folder). AMD's port targets Instinct datacenter GPUs, which run
 threads in groups (*wavefronts*) of 64. Our RDNA4 card defaults to 32, so the port does not work out of the box.
 The patch:
 
@@ -153,4 +187,4 @@ The patch:
 
 The fix was checked in two ways. Forward renders match an independent pure-PyTorch renderer to 100 dB PSNR.
 Gradients match that renderer (cosine similarity 1.0000) and finite differences.
-`scripts/verify_gsplat_rocm.py` repeats the finite-difference check and runs automatically after every build.
+`src/gaussian_splat/rocm/verify_gsplat_rocm.py` repeats the finite-difference check and runs automatically after every build.

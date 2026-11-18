@@ -1,0 +1,205 @@
+diff --git a/gsplat/cuda/csrc/IntersectTile.cu b/gsplat/cuda/csrc/IntersectTile.cu
+index ac58f24..c90a783 100644
+--- a/gsplat/cuda/csrc/IntersectTile.cu
++++ b/gsplat/cuda/csrc/IntersectTile.cu
+@@ -1,5 +1,6 @@
+ #include <ATen/Dispatch.h>
+ #include <ATen/core/Tensor.h>
++#include <ATen/ATen.h>  // [DVA502 patch] at::sort
+ 
+ #include "Common.h"
+ #include "Common.cuh"
+@@ -308,15 +309,16 @@ void radix_sort_double_buffer(
+     cub::DoubleBuffer<int32_t> d_values(
+         flatten_ids.data_ptr<int32_t>(), flatten_ids_sorted.data_ptr<int32_t>()
+     );
+-    CUB_WRAPPER(
+-        cub::DeviceRadixSort::SortPairs,
+-        d_keys,
+-        d_values,
+-        n_isects,
+-        0,
+-        32 + tile_n_bits + image_n_bits,
+-        GET_CURRENT_STREAM()
+-    );
++    // [DVA502 patch] hipcub device-wide sorts pick their kernel at runtime from the GPU's default
++    // wave size (32 on RDNA), but this build is compiled wave64 -> missing symbol. Use torch's sort
++    // instead (stable, same order: keys are non-negative and image ids sit in the top bits).
++    {
++        auto s = at::sort(isect_ids.narrow(0, 0, n_isects), /*stable=*/true, /*dim=*/0, /*descending=*/false);
++        isect_ids_sorted.narrow(0, 0, n_isects).copy_(std::get<0>(s));
++        flatten_ids_sorted.narrow(0, 0, n_isects).copy_(
++            flatten_ids.narrow(0, 0, n_isects).index_select(0, std::get<1>(s)));
++        return;
++    }
+     switch (d_keys.selector) {
+     case 0: // sorted items are stored in isect_ids
+         isect_ids_sorted.set_(isect_ids);
+@@ -360,18 +362,16 @@ void segmented_radix_sort_double_buffer(
+     // image dimensions are contiguous in the isect_ids, 
+     // so we can use DeviceSegmentedRadixSort to only sort the lower 
+     // (tile_n_bits + 32) bits
+-    CUB_WRAPPER(
+-        cub::DeviceSegmentedRadixSort::SortPairs,
+-        d_keys,
+-        d_values,
+-        n_isects,
+-        n_segments, // number of segments
+-        offsets.data_ptr<int64_t>(),
+-        offsets.data_ptr<int64_t>() + 1,
+-        0,
+-        32 + tile_n_bits,
+-        GET_CURRENT_STREAM()
+-    );
++    // [DVA502 patch] hipcub device-wide sorts pick their kernel at runtime from the GPU's default
++    // wave size (32 on RDNA), but this build is compiled wave64 -> missing symbol. Use torch's sort
++    // instead (stable, same order: keys are non-negative and image ids sit in the top bits).
++    {
++        auto s = at::sort(isect_ids.narrow(0, 0, n_isects), /*stable=*/true, /*dim=*/0, /*descending=*/false);
++        isect_ids_sorted.narrow(0, 0, n_isects).copy_(std::get<0>(s));
++        flatten_ids_sorted.narrow(0, 0, n_isects).copy_(
++            flatten_ids.narrow(0, 0, n_isects).index_select(0, std::get<1>(s)));
++        return;
++    }
+     switch (d_keys.selector) {
+     case 0: // sorted items are stored in isect_ids
+         isect_ids_sorted.set_(isect_ids);
+diff --git a/gsplat/cuda/csrc/RasterizeToPixels3DGSBwd.cu b/gsplat/cuda/csrc/RasterizeToPixels3DGSBwd.cu
+index 37300ab..baca3d2 100644
+--- a/gsplat/cuda/csrc/RasterizeToPixels3DGSBwd.cu
++++ b/gsplat/cuda/csrc/RasterizeToPixels3DGSBwd.cu
+@@ -82,14 +82,7 @@ __device__ T dpp_warpMax(T &val) {
+ 	// tmp = max(tmp, __builtin_amdgcn_mov_dpp(tmp, 0x142, 0xf, 0xf, 1)); //BCAST15
+ 	// tmp = max(tmp, __builtin_amdgcn_mov_dpp(tmp, 0x143, 0xf, 0xf, 1)); //BCAST31
+ 	// return __shfl(tmp, 63);
+-    __shared__ typename rocprim::warp_reduce<int32_t, 64>::storage_type warp_storage;
+-    rocprim::warp_reduce<int32_t, 64> wreduce;
+-    int32_t max;
+-    wreduce.reduce(val,            // 1) value held by this lane
+-            max,               // 2) reference that will receive the result
+-            warp_storage,                 // 3) shared-memory storage
+-            rocprim::maximum<int32_t>());
+-    return max;
++    return gs_warp_max<64>(val);  // [DVA502 patch]
+ }
+ 
+ template <uint32_t CDIM, typename scalar_t>
+@@ -506,13 +499,7 @@ __global__ void rasterize_to_pixels_3dgs_bwd_kernel(
+     #endif
+     
+     #if USE_ROCM
+-        __shared__ typename rocprim::warp_reduce<int32_t, 64>::storage_type warp_storage;
+-        rocprim::warp_reduce<int32_t, 64> wreduce;
+-        int32_t warp_bin_final;
+-        wreduce.reduce( bin_final,            // 1) value held by this lane
+-                warp_bin_final,               // 2) reference that will receive the result
+-                warp_storage,                 // 3) shared-memory storage
+-                rocprim::maximum<int32_t>()); // 4) binary operator
++        const int32_t warp_bin_final = gs_warp_max<64>(bin_final);  // [DVA502 patch]
+     #else
+     const int32_t warp_bin_final =
+         cg::reduce(warp, bin_final, cg::greater<int>());
+diff --git a/gsplat/cuda/include/Common.cuh b/gsplat/cuda/include/Common.cuh
+index a43c87e..2970f20 100644
+--- a/gsplat/cuda/include/Common.cuh
++++ b/gsplat/cuda/include/Common.cuh
+@@ -17,7 +17,13 @@
+ #include <hipcub/hipcub.hpp>
+ #include <hipcub/block/block_reduce.hpp>
+ #include <rocprim/warp/warp_reduce.hpp>
++#include <c10/hip/HIPCachingAllocator.h>
+ #endif
++// [DVA502 patch] torch >= 2.10 ROCm headers keep the CUDA namespace name (c10::cuda::CUDACachingAllocator).
++// Spelled via token pasting so torch's hipify (a text rewrite) does not turn it back into c10::hip::HIPCachingAllocator.
++#define GS_CAT_(a, b) a##b
++#define GS_CAT(a, b) GS_CAT_(a, b)
++#define GS_TORCH_DEVICE_ALLOCATOR ::c10::GS_CAT(cu, da)::GS_CAT(CU, DACachingAllocator)
+ 
+ namespace gsplat {
+ 
+@@ -38,7 +44,7 @@ namespace gsplat {
+     do {                                                                       \
+         size_t temp_storage_bytes = 0;                                         \
+         auto res = func(nullptr, temp_storage_bytes, __VA_ARGS__);                        \
+-        auto &caching_allocator = *::c10::hip::HIPCachingAllocator::get();   \
++        auto &caching_allocator = *GS_TORCH_DEVICE_ALLOCATOR::get();        \
+         auto temp_storage = caching_allocator.allocate(temp_storage_bytes);    \
+         res = func(temp_storage.get(), temp_storage_bytes, __VA_ARGS__);  \
+ 	assert(res == hipSuccess);                                            \
+diff --git a/gsplat/cuda/include/Utils.cuh b/gsplat/cuda/include/Utils.cuh
+index ee6d46e..87f6f2b 100644
+--- a/gsplat/cuda/include/Utils.cuh
++++ b/gsplat/cuda/include/Utils.cuh
+@@ -233,25 +233,28 @@ inline __device__ void manual_warpSum(float val[N]) {
+     }  
+ }
+ 
++// [DVA502 patch] storage-free warp reductions via XOR butterfly shuffles. Every lane gets the result
++// (same semantics as CUDA cg::reduce). rocprim::warp_reduce without DPP needs real shared storage and only
++// guarantees the result in lane 0, but gsplat passes NULL storage / uses the result in every lane.
++template <int W = 64>
++__device__ inline float gs_warp_sum(float v) {
++    #pragma unroll
++    for (int o = W / 2; o > 0; o >>= 1) v += __shfl_xor(v, o, W);
++    return v;
++}
++template <int W = 64>
++__device__ inline int32_t gs_warp_max(int32_t v) {
++    #pragma unroll
++    for (int o = W / 2; o > 0; o >>= 1) v = max(v, __shfl_xor(v, o, W));
++    return v;
++}
++
+ template<int LOGICAL_WARP_SIZE = 64>
+ __device__ inline void rocprim_warpSum_scalar(float& val, typename rocprim::warp_reduce<float,LOGICAL_WARP_SIZE>::storage_type*
+             warp_storage_base)
+ {
+-    using warp_reduce_t = rocprim::warp_reduce<float, LOGICAL_WARP_SIZE>;
+-    //constexpr int NUM_WARPS = BLOCK_SIZE / LOGICAL_WARP_SIZE;
+-
+-    // One storage object per logical warp inside the block
+-    // __shared__ typename warp_reduce_t::storage_type
+-    //     warp_storage[NUM_WARPS];
+-
+-    const int warp_id = threadIdx.x / LOGICAL_WARP_SIZE;
+-    warp_reduce_t wreduce;
+-    float sum;
+-    wreduce.reduce(val,                       
+-                   sum,
+-                   warp_storage_base[warp_id],    
+-                   rocprim::plus<float>());
+-    val = sum;
++    (void)warp_storage_base;
++    val = gs_warp_sum<LOGICAL_WARP_SIZE>(val);
+ }
+ 
+ //-----------------------------------------------------------------------------
+diff --git a/setup.py b/setup.py
+index 16f3821..71eb7a5 100644
+--- a/setup.py
++++ b/setup.py
+@@ -204,6 +204,11 @@ def get_extensions():
+         extra_compile_args["cxx"] += ["-fopenmp"]
+ 
+         hipcc_flags = [ "-D__HIP_PLATFORM_AMD__", "-DC10_CUDA_NO_CMAKE_CONFIGURE_FILE", "-DUSE_ROCM" , f"--offload-arch={gpu_arch}"]
++        # [DVA502 patch] RDNA (gfx10+/gfx12) defaults to wave32; this port's kernels assume wave64
++        if os.getenv("GSPLAT_WAVE64", "1") == "1":
++            # rocprim assumes wave32 on all RDNA (ROCPRIM_NAVI); its only use is the wave size, so override it
++            # gfx12 has no DPP row broadcasts, which rocprim needs for 64-wide scans -> use its shuffle fallback
++            hipcc_flags += ["-mwavefrontsize64", "-DROCPRIM_NAVI=0", "-DROCPRIM_DISABLE_DPP=1"]
+         if WITH_SYMBOLS:
+             hipcc_flags += ["-g", "-ggdb" , "-O0"]
+         else:
+@@ -227,10 +232,8 @@ def get_extensions():
+         include_dirs = [
+             osp.join(current_dir, "gsplat", "cuda", "include"),
+             f"{os.environ['HOME']}/.local/include",
+-            f"/opt/conda/include",
+-            f"/opt/conda/envs/py_3.12/lib/python3.12/site-packages/",
+-            f"/opt/rocm/include",
+-        ]
++            os.getenv("GSPLAT_GLM_INCLUDE", osp.join(os.environ['HOME'], "gsplat-rocm", "glm_include")),
++        ]  # [DVA502 patch] glm copied outside the source tree (hipify must not rewrite it); removed /opt/conda + /opt/rocm (7.2.1) paths: use the ROCm headers torch was built with
+ 
+         extension = CUDAExtension(
+             # Make sure this matches your package structure

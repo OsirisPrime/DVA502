@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "splat-pipeline"
+version = "0.1.0"
+description = "Video/photos -> COLMAP/GLOMAP -> gsplat -> 3DGS .ply, with checkpoint/resume"
+requires-python = ">=3.10"
+# torch and gsplat are deliberately not listed: they must match the GPU (ROCm build / CUDA build) and are
+# installed separately, see README.md.
+dependencies = ["numpy", "scipy", "opencv-python", "pyyaml", "tqdm"]
+
+[project.optional-dependencies]
+test = ["pytest"]
+
+[project.scripts]
+splat-pipeline = "splat_pipeline.cli:main"
+
+[tool.setuptools]
+packages = ["splat_pipeline"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

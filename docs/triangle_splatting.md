@@ -12,9 +12,9 @@ video ──frames──▶ images/ ──sfm (COLMAP)──▶ camera poses + s
 The training uses the [official code](https://github.com/trianglesplatting/triangle-splatting) and its GPU
 rasterizer, compiled for our GPU.
 
-> **Status:** a short run (3k steps, quarter resolution) on `img_1453` reached **PSNR 25.3 dB, SSIM 0.870** in about
-> 1 minute. A full 30k-step run at full resolution has not been completed yet. Gaussian splatting on the same
-> scene gives 28.8 dB.
+> **Status:** a full 30k-step run at full resolution on `img_1453` reached **PSNR 28.45 dB, SSIM 0.925** with
+> 3.25M triangles. Gaussian splatting on the same scene gives 28.80 dB / 0.935 with 1.42M Gaussians.
+> A quick test (3k steps, quarter resolution) gives 25.3 dB in about 1 minute.
 
 > **Licence:** the official code builds on Inria's 3D Gaussian Splatting code, which is **free for
 > non-commercial research and evaluation only** (`LICENSE_GS.md` in the source). Check this with ABB before using it
@@ -22,7 +22,7 @@ rasterizer, compiled for our GPU.
 
 ## Files
 
-Everything is in `local_data/triangle_splat/` (git-ignored at the moment):
+Everything is in `src/triangle_splat/`:
 
 | File | Purpose |
 |---|---|
@@ -34,11 +34,11 @@ Everything is in `local_data/triangle_splat/` (git-ignored at the moment):
 ## 1. One-time setup
 
 Prerequisites: the `lerobot` conda env with ROCm PyTorch and `~/rocm-torch.txt` (see the [README](../README.md#setup)),
-and COLMAP (`sudo apt install colmap`). The build also reuses the ROCm compiler from the gsplat build
+and COLMAP (see [gaussian_splatting.md](gaussian_splatting.md), setup). The build also reuses the ROCm compiler from the gsplat build
 (`~/gsplat-rocm`) if it exists; otherwise it downloads the ROCm 7.13 developer SDK (~9 GB) into its own venv.
 
 ```bash
-bash local_data/triangle_splat/build_triangle_splat_rocm.sh
+bash src/triangle_splat/build_triangle_splat_rocm.sh
 ```
 
 - Everything goes into `~/triangle-splat-rocm/` (venv, source, build log). The `lerobot` env is not changed.
@@ -49,14 +49,14 @@ bash local_data/triangle_splat/build_triangle_splat_rocm.sh
 
 Use the Gaussian splatting pipeline for steps 2–4 (film, extract frames, COLMAP), see
 [gaussian_splatting.md](gaussian_splatting.md). A scene folder needs `images/` and `sparse/0/` (or
-`sparse_model.txt` pointing at another model).
+`sparse_model.txt` pointing at another model, e.g. `sparse_glomap/0` from `sfm --mapper glomap`).
 
 ## 3. Train
 
 ```bash
 source ~/triangle-splat-rocm/venv/bin/activate
 cd ~/projects/DVA502
-python local_data/triangle_splat/ts_pipeline.py train --data local_data/scenes/img_1453 --steps 30000 --downscale 1
+python src/triangle_splat/ts_pipeline.py train --data local_data/scenes/img_1453 --steps 30000 --downscale 1
 ```
 
 The progress bar shows loss and triangle count, with a permanent log line every 1000 steps.
@@ -102,7 +102,7 @@ The model files are large (hundreds of MB at full resolution) and are git-ignore
 |---|---|
 | `Triangle rasterizer not available` | Activate the venv (`source ~/triangle-splat-rocm/venv/bin/activate`) or run the build script. |
 | `RASTERIZER WRONG` from the check | Do not train with that build. See the build log in `~/triangle-splat-rocm/build.log`. |
-| `No COLMAP model in ...` | Run `gs_pipeline.py sfm` on the scene first. |
+| `No COLMAP model in ...` | Run `src/gaussian_splat/gs_pipeline.py sfm` on the scene first. |
 | Out of GPU memory | Use `--downscale 2` or lower `--max_triangles`. |
 | Build fails | Check that torch is still `2.11.0+rocm7.13.0`; the ROCm SDK version must match it. |
 
