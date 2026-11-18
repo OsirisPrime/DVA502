@@ -1,0 +1,5 @@
+2026-11-18 22:34:04,709 INFO splat_pipeline.trainer: run folder: /home/kimsv/projects/DVA502/outputs/splat_pipeline/img_1478_20261118-223404
+2026-11-18 22:34:04,846 INFO splat_pipeline.trainer: model local_data/scenes/img_1478/sparse_glomap/0: 296 posed images (259 train / 37 test), 102211 points
+2026-11-18 22:34:04,846 INFO splat_pipeline.data: 259 images, 1.6 GB decoded -> cached in RAM
+2026-11-18 23:09:44,087 INFO splat_pipeline.trainer: test views 37 | PSNR 27.19 dB | SSIM 0.9131 | 2029829 Gaussians
+2026-11-18 23:09:44,088 INFO splat_pipeline.trainer: saved /home/kimsv/projects/DVA502/outputs/splat_pipeline/img_1478_20261118-223404/point_cloud.ply

@@ -76,6 +76,55 @@ A scene prepared with the research script (`gs_pipeline.py sfm`) can be trained 
 splat-pipeline train --scene $S --resume outputs/splat_pipeline/my_scene_<timestamp>
 ```
 
+### Camera poses: COLMAP or GLOMAP
+
+`sfm` always uses COLMAP for the first two steps (finding features in every frame and matching them between
+frames). Only the last step, which computes the camera poses from the matches, can be done by either COLMAP or
+GLOMAP. Choose with `--mapper`:
+
+```bash
+splat-pipeline sfm --scene $S --mapper colmap    # COLMAP's incremental mapper (default)
+splat-pipeline sfm --scene $S --mapper glomap    # GLOMAP's global mapper
+```
+
+| | `--mapper colmap` (default) | `--mapper glomap` |
+|---|---|---|
+| How it works | incremental: starts from two frames and adds one frame at a time | global: solves all cameras at once |
+| Speed of the mapping step | slow, grows quickly with the number of frames | much faster (1–2 min for ~300 frames) |
+| Robustness | the reference; most robust on difficult footage | slightly less robust when frames overlap little |
+| Output folder | `sparse/` | `sparse_glomap/` |
+
+**Which to use:**
+- Start with **GLOMAP** for videos. It is fast, and on our scenes it registered as many frames as COLMAP.
+- Use **COLMAP** if GLOMAP registers clearly fewer than ~80% of the frames or splits the scene into several large
+  models, or as the reference to compare against.
+- For either one, if frames are missing, switch the matching from `sequential` (neighbouring frames only, default)
+  to `exhaustive` (every frame against every other), which is slower but finds more connections:
+  `splat-pipeline sfm --scene $S --mapper glomap --matcher exhaustive`.
+
+GLOMAP needs COLMAP 3.13 or newer, which has it built in as `colmap global_mapper`. Our `lerobot` env has
+COLMAP 4.2.1 (setup step 1); `/usr/bin/colmap` from apt (3.9) only supports `--mapper colmap`.
+
+**Check the result before training:** `sfm` ends with a line like
+```
+glomap: registered 276/292 images, 29847 points, 2 model(s); features+matching 111 s, mapping 54 s
+```
+The same numbers are in `$S/scene.json`.
+
+| Check | Good | What to do otherwise |
+|---|---|---|
+| Registered images | above ~80% of the frames | try `--matcher exhaustive`, the other mapper, or re-film (slower, more texture, more light) |
+| Models | 1, or one large model plus a few tiny ones | several large models means the video was split; only the largest is used. Re-film with more overlap |
+
+Missing frames are often blurry ones (fast camera motion), and dropping them is fine: training only uses
+registered frames. Example, `img_1477` with GLOMAP: 276/292 registered. The 16 missing frames were all blurry
+(sharpness well below the median), and the second model held 5 of them, so it could be ignored.
+
+**Switching between the two:** each mapper keeps its own output folder, but `train` uses the model of the *latest*
+`sfm` run (recorded in `scene.json`). To train on the other one, run `sfm` again with that `--mapper`. Every `sfm`
+run starts from scratch: it recreates `database.db` and repeats feature extraction and matching. Each run's
+complete COLMAP output is in `$S/sfm_<mapper>.log`.
+
 ## 3. Settings
 
 All settings, with defaults and comments, are in
@@ -97,7 +146,7 @@ The most useful settings:
 
 | Key | Default | Meaning |
 |---|---|---|
-| `sfm.mapper` | `colmap` | `colmap` (incremental, most robust) or `glomap` (global, much faster on many images) |
+| `sfm.mapper` | `colmap` | `colmap` (incremental, most robust) or `glomap` (global, much faster on many images); see [Camera poses](#camera-poses-colmap-or-glomap) |
 | `sfm.matcher` | `sequential` | `sequential` (video), `exhaustive` (<~500 photos, most robust), `vocab_tree` (large photo sets, needs `vocab_tree_path`) |
 | `sfm.camera_model` | `PINHOLE` | `OPENCV` estimates lens distortion and undistorts the images (wide-angle cameras) |
 | `sfm.colmap` | `colmap` | COLMAP executable; `colmap` = `$COLMAP_BIN`, else the conda env's COLMAP, else PATH |

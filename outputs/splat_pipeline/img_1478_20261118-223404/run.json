@@ -1,0 +1,11 @@
+{
+  "scene": "/home/kimsv/projects/DVA502/local_data/scenes/img_1478",
+  "started": "2026-11-18 22:34:07",
+  "git": "592fd61-dirty",
+  "python": "3.12.15",
+  "torch": "2.11.0+rocm7.13.0",
+  "gsplat": "1.5.3",
+  "device": "AMD Radeon RX 9070 XT",
+  "train_views": 259,
+  "test_views": 37
+}

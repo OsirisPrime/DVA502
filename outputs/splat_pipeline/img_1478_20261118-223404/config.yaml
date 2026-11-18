@@ -1,0 +1,40 @@
+frames:
+  fps: 2.0
+  max_side: 1920
+  jpeg_quality: 95
+sfm:
+  mapper: colmap
+  matcher: sequential
+  vocab_tree_path: ''
+  camera_model: PINHOLE
+  single_camera: true
+  max_features: 8192
+  colmap: colmap
+  use_gpu: false
+train:
+  steps: 30000
+  downscale: 1
+  test_every: 8
+  sh_degree: 3
+  sh_degree_interval: 1000
+  ssim_lambda: 0.2
+  strategy: default
+  cap_max: 3000000
+  densify_until: -1.0
+  absgrad: false
+  lr_means: 0.00016
+  lr_scales: 0.005
+  lr_quats: 0.001
+  lr_opacities: 0.05
+  lr_sh0: 0.0025
+  lr_shN: 0.000125
+  packed: false
+  cache: auto
+  cache_limit_gb: 8.0
+  num_workers: 4
+  eval_every: 0
+  checkpoint_every: 5000
+  keep_checkpoints: 2
+  save_renders: true
+  seed: 0
+  device: cuda

@@ -88,8 +88,13 @@ computes the poses from the matches differs:
 | Output folder | `sparse/` | `sparse_glomap/` (so both can be kept) |
 
 ```bash
-python src/gaussian_splat/gs_pipeline.py sfm --data local_data/scenes/img_1453 --sequential --mapper glomap
+python src/gaussian_splat/gs_pipeline.py sfm --data local_data/scenes/img_1453                              # COLMAP mapper
+python src/gaussian_splat/gs_pipeline.py sfm --data local_data/scenes/img_1453 --sequential --mapper glomap # GLOMAP mapper
 ```
+
+**Which to use:** start with GLOMAP for videos (much faster, and as good on our scenes). Use the COLMAP mapper if
+GLOMAP registers clearly fewer than ~80% of the frames or splits the scene, or as the reference. If frames are
+missing with either one, drop `--sequential` so every frame is matched against every other.
 
 On `img_1453` with sequential matching, GLOMAP registered all 265 frames (about 63,800 points) and its mapping
 step took about 1.5 min. Feature extraction and matching took 3–5 min. Sequential matching worked here together
